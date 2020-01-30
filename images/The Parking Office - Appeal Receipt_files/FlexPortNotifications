@@ -1,0 +1,347 @@
+/// <reference path="pubsub.js" />
+/// <reference path="notificationRenderer.js" />
+'use strict';
+
+; var notificationHandler = (function ($, urlHandler, authTokenHandler, pubsub) {
+
+    var CONST_ENDPOINT = "/api/Notifications/";
+    var CONST_MIN_WAIT_PERIOD_SECONDS = 60; // ??
+
+    var notifications = new Array();
+    var currentNotifications = new Array();
+
+    var notificationTypes = Object.freeze({ Info: 0, Warning: 1, Error: 2, Success: 3 })
+    var notificationCategories = Object.freeze({ PermitBalance: 0, PermitRenewal: 1, UnpaidCitations: 2, Flash: 3, General: 4 })
+
+    function updateNotifications(data) {
+        notifications = new Array();
+        for (var i = 0, len = data.length; i < len; i++) {
+            notifications.push(new notification(data[i]));
+        }
+        publishNotifications();
+    }
+
+    function publishNotifications() {
+
+        var permitBalanceNotifications = new Array();
+
+        for (var i = 0, len = notifications.length; i < len; i++) {
+
+            var thisNotification = notifications[i];
+
+            // Determine the notification category and publish to the appropriate channel
+
+            if (thisNotification.Category == notificationCategories.PermitBalance) {
+                permitBalanceNotifications.push(thisNotification);
+            }
+            else if (thisNotification.Category == notificationCategories.PermitRenewal) {
+                pubsub.publish('PermitRenewal', thisNotification);
+            }
+            else if (thisNotification.Category == notificationCategories.UnpaidCitations) {
+                pubsub.publish('UnpaidCitations', thisNotification);
+            }
+            else if (thisNotification.Category == notificationCategories.Flash) {
+                pubsub.publish('Flash', thisNotification);
+            }
+            else if (thisNotification.Category == notificationCategories.General) {
+                pubsub.publish('General', thisNotification);
+            }
+
+            if (thisNotification.Category != notificationCategories.Flash) {
+                currentNotifications.push(thisNotification);
+            }
+        }
+
+        pubsub.publish('PermitBalance', permitBalanceNotifications);
+        pubsub.publish('All', notifications);
+    }
+
+    function runTheCheck() {
+        if (localStorage) {
+            var lastNotificationCheck = localStorage.getItem('lastNotificationCheck');
+            if (hasNSecondsElapseSinceLastCheck(CONST_MIN_WAIT_PERIOD_SECONDS, lastNotificationCheck)) {
+                localStorage.setItem('lastNotificationCheck', Date.now());
+                return true;
+            } else {
+                var data = JSON.parse(localStorage.getItem("lastNotificationJSON"));
+
+                if (data) {
+                    var millisecondsToWait = 250;
+                    setTimeout(function () {
+                        updateNotifications(data);
+                    }, millisecondsToWait);
+                }
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function hasNSecondsElapseSinceLastCheck(nSeconds, lastCheckTimestamp) {
+        if (!lastCheckTimestamp) return true;
+        var newTimeStamp = parseFloat(lastCheckTimestamp) + (nSeconds * 1000);
+        return newTimeStamp < Date.now();
+    }
+
+    function getNotifications() {
+
+        if (!runTheCheck()) {
+            var data = JSON.parse(localStorage.getItem("lastNotificationJSON"));
+            if (!data && data.length > 0) {
+                updateNotifications(data);
+            }
+
+            return;
+        }
+
+        if (!authTokenHandler.hasValidCredentials()) {
+            pubsub.subscribe("All");
+            return;
+        }
+
+        $.ajax({
+            url: urlHandler.buildUrl(CONST_ENDPOINT),
+            type: 'GET',
+            datatype: 'json',
+            cache: false,
+            success: function (data) {
+                if (data.length > 0) {
+                    localStorage.setItem("lastNotificationJSON", JSON.stringify(data));
+                    updateNotifications(data);
+                }
+                else {
+                    pubsub.publish("Flash");
+                    pubsub.subscribe("All");
+                }
+            },
+            error: function () {
+                pubsub.publish("Flash");
+                pubsub.subscribe("All");
+            }
+        });
+    }
+
+    function getFlashMessageClass(type) {
+        if (type == notificationTypes.Info) {
+            return "alert alert-info";
+        }
+        else if (type == notificationTypes.Success) {
+            return "alert alert-success";
+        }
+        else if (type == notificationTypes.Warning) {
+            return "alert alert-warning";
+        }
+        else if (type == notificationTypes.Error) {
+            return "alert alert-danger";
+        }
+    }
+
+    function notification(data) {
+        this.Uid = data.Uid;
+        this.Type = data.Type;
+        this.Category = data.Category;
+        this.NotificationText = data.NotificationText;
+        this.NotificationActions = new Array();
+
+        for (var i = 0, len = data.NotificationActions.length; i < len; i++) {
+            var action = new notificationAction(data.NotificationActions[i])
+            this.NotificationActions.push(action);
+        }
+    }
+    function notificationAction(data) {
+        this.Text = data.Text;
+        this.URL = data.URL;
+    }
+
+    function clearNotificationStorage() {
+        localStorage.removeItem("lastNotificationJSON");
+        localStorage.removeItem("lastNotificationCheck");
+    }
+
+    function init() {
+        pubsub.subscribe("clearNotificationStorage", clearNotificationStorage);
+    }
+
+    init();
+
+    return {
+        getNotifications: getNotifications,
+        getFlashMessageClass: getFlashMessageClass,
+        notification: notification,
+        notificationAction: notificationAction
+    }
+
+}(jQuery, urlHandler, authTokenHandler, pubsub));
+/// <reference path="pubsub.js" />
+/// <reference path="notificationHandler.js" />
+'use strict';
+
+;var notificationRenderer = (function ($, win, notificationHandler, pubsub) {
+
+    // can have multiple elements (comma-separated), e.g. 
+    // #notificationContainer, .alternate-notifications
+    var CONST_NOTIF_CONTAINER = "#notificationMenu";
+    var CONST_NOTIF_COUNT_BADGE = "#notificationCountBadge";
+    var CONST_FLASH_CONTAINER = "#flashMessageContainer";
+    var CONST_DASHBOARD_NOTIF_CONTAINER = "#notificationAlerts";
+    var CONST_GLYPH_ICON = ".glyphicon-bell";
+
+    function updateNotificationElement(topic, data) {
+
+        var elementList = win.document.querySelectorAll(CONST_NOTIF_CONTAINER);
+
+        var html = "";
+
+        var glyphIcon = win.document.querySelectorAll(CONST_GLYPH_ICON);
+        var notificationCount = win.document.querySelectorAll(CONST_NOTIF_COUNT_BADGE);
+
+        if (data != null && data.length > 0)
+        {
+            glyphIcon[0].style.cssText = "color:@Red";
+            notificationCount[0].className = notificationCount[0].className.replace("hidden", "");
+            notificationCount[0].innerHTML = data.length;
+
+            for (var i = 0, nlen = data.length; i < nlen; i++) {
+                var notification = data[i];
+                console.log(notification);
+                html += "<li data-notificiationid='" + notification.Uid + "'>";
+                html += '<a href="';
+                html += notification.NotificationActions[0].URL;
+                html += '" >';
+                html += notification.NotificationText;
+                html += '</a>';
+                html += "</li>";
+            }
+
+            for (var i = 0, len = elementList.length; i < len; ++i) {
+                elementList[i].innerHTML = html;
+            }
+        }
+    }
+
+    function updateMainFlashContainer(elementName, data) {
+        var elementList = win.document.querySelectorAll(elementName);
+
+        for (var i = 0, len = elementList.length; i < len; ++i) {
+            elementList[i].innerHTML = "";
+        }
+
+        if (data == null)
+        {
+            return;
+        }
+
+        var html = "";
+        for (var i = 0, nlen = data.length; i < nlen; i++) {
+            var message = "";
+            message += "<div data-flashid='" + data[i].Uid + "' class=\"";
+            message += notificationHandler.getFlashMessageClass(data[i].Category);
+            message += "\" >";
+            message += data[i].NotificationText;
+            message += ":  ";
+            message += buildActionLinkElements(data[i].NotificationActions);
+            message += "</div>";
+            html += message;
+        }
+
+
+        for (var i = 0, len = elementList.length; i < len; ++i) {
+            elementList[i].innerHTML = html;
+        }
+    }
+
+    function updateFlashElement(topic, data) { updateMainFlashContainer(CONST_DASHBOARD_NOTIF_CONTAINER, data); }
+
+    function updateDashboardNotifications(topic, data) { updateMainFlashContainer(CONST_DASHBOARD_NOTIF_CONTAINER, data); }
+
+    function buildActionLinkElements(actions) {
+        
+        var finalMarkup = '';
+
+
+        if (typeof actions == 'undefined')
+        {
+            return finalMarkup;
+        }
+
+        for (var i = 0, nlen = actions.length; i < nlen; i++) {
+            var actionMarkup = "";
+            if (actions[i].URL.lastIndexOf("!onclick!") > -1)
+            {
+                actionMarkup = '<strong><a href="#" onclick="';
+                actionMarkup += actions[i].URL.substring(actions[i].URL.lastIndexOf("!onclick!") + 9);
+                actionMarkup += '">';
+                actionMarkup += actions[i].Text;
+                actionMarkup += '</a></strong>  |  ';
+            }
+            else
+            {
+                actionMarkup = '<strong><a href="';
+                actionMarkup += actions[i].URL;
+                actionMarkup += '">';
+                actionMarkup += actions[i].Text;
+                actionMarkup += '</a></strong>  |  ';
+            }
+
+            finalMarkup += actionMarkup;
+        }
+
+        finalMarkup = finalMarkup.substring(0, finalMarkup.lastIndexOf('  |  '));
+
+        return finalMarkup;
+    }
+
+    function init() {
+        if (CONST_FLASH_CONTAINER !== "") {
+            pubsub.subscribe("Flash", updateFlashElement);
+        }
+        if (CONST_NOTIF_CONTAINER !== "") {
+            pubsub.subscribe("All", updateNotificationElement);
+        }
+
+        notificationHandler.getNotifications();
+    }
+
+    init();
+
+    return {
+        updateNotificationElement: updateNotificationElement,
+        updateFlashElement: updateFlashElement,
+        updateDashboardNotifications: updateDashboardNotifications
+    }
+}(jQuery, this, notificationHandler, pubsub));
+/// <reference path="notificationHandler.js" />
+/// <reference path="notificationRenderer.js" />
+/// <reference path="loadingDialog.js" />
+'use strict';
+
+
+; var notificationActions = (function ($, urlHandler, pubsub, authTokenHandler, notificationHandler, notificationRenderer) {
+
+
+    var CONST_PERMIT_BALANCE_ENDPOINT = "api/PermitBalances/AddToCart/";
+
+    function addPermitBalanceToCart(permitUID)
+    {
+        if (!authTokenHandler.hasValidCredentials()) return;
+
+        showLoadingDialog("Adding Balance to Cart...");
+
+        $.ajax({
+            url: urlHandler.buildUrl(CONST_PERMIT_BALANCE_ENDPOINT + permitUID),
+            type: 'GET',
+            datatype: 'json',
+            success: function (data) {
+                pubsub.publish("clearNotificationStorage");
+                notificationHandler.getNotifications();
+                UpdateBasket(null, null, null);
+            }
+        });
+    }
+
+
+    return {
+        addPermitBalanceToCart: addPermitBalanceToCart
+    }
+
+}(jQuery, urlHandler, pubsub, authTokenHandler, notificationHandler, notificationRenderer));

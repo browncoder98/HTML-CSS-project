@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang='en'>
+
+<head>
+  <meta charset='UTF-8'>
+  <title>Portfolio Homepage</title>
+  <link href="https://fonts.googleapis.com/css?family=Lato" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="container">
+    <div class="nav-wrapper">
+      <div class="left-side">
+        <div class="nav-link-wrapper active-nav-link">
+          <a href="index.html">Home</a>
+        </div>
+
+        <div class="nav-link-wrapper">
+          <a href="about.html">About</a>
+        </div>
+      </div>
+
+      <div class="right-side">
+        <div class="brand">
+          Mohammad Hossan, PhD
+        </div>
+      </div>
+    </div>
+
+    <div class="content-wrapper">
+      <div class="portfolio-items-wrapper">
+
+        <div class="portfolio-item-wrapper">
+          <div class="portfolio-img-background" style="background-image:url(images/portfolio1.jpg)"></div>
+
+          <div class="img-text-wrapper">
+            
+
+            <div class="subtitle"><a href="team.html"><h1>My Team</h1></a></div>
+          </div>
+        </div>
+
+        <div class="portfolio-item-wrapper">
+          <div class="portfolio-img-background" style="background-image:url(images/portfolio2.jpg)"></div>
+          <div class="img-text-wrapper">
+            
+
+            <div class="subtitle"><a href="research.html"><h1>My Research</h1></a></div>
+          </div>
+        </div>
+
+        <div class="portfolio-item-wrapper">
+          <div class="portfolio-img-background" style="background-image:url(images/portfolio3.jpg)"></div>
+          <div class="img-text-wrapper">
+            
+
+            <div class="subtitle"><a href="publications.html"><h1>My Publications</h1></a></div>
+          </div>
+        </div>
+
+        <div class="portfolio-item-wrapper">
+          <div class="portfolio-img-background" style="background-image:url(images/portfolio4.jpg)"></div>
+          <div class="img-text-wrapper">
+            
+
+            <div class="subtitle"><a href="http//google.com"><h1>My Teachings</h1></a></div>
+          </div>
+        </div>
+
+        <div class="portfolio-item-wrapper">
+          <div class="portfolio-img-background" style="background-image:url(images/portfolio5.jpg)"></div>
+          <div class="img-text-wrapper">
+            
+
+            <div class="subtitle"><a href="lab resources.html"><h1>Our Lab Resources</h1></a></div>
+          </div>
+        </div>
+
+        <div class="portfolio-item-wrapper">
+          <div class="portfolio-img-background" style="background-image:url(images/portfolio6.jpg)"></div>
+          <div class="img-text-wrapper">
+            
+
+            <div class="subtitle"><a href="contact us.html"><h1>Contact Info</h1></a></div>
+          </div>
+        </div>
+
+        
+
+        
+        
+
+        
+       
+
+        
+
+      </div>
+    </div>
+  </div>
+
+</body>
+
+<script>
+  const portfolioItems = document.querySelectorAll('.portfolio-item-wrapper');
+  portfolioItems.forEach(portfolioItem => {
+    portfolioItem.addEventListener('mouseover', () => {
+      console.log(portfolioItem.childNodes[1].classList)
+      portfolioItem.childNodes[1].classList.add('image-blur');
+    });
+    portfolioItem.addEventListener('mouseout', () => {
+      console.log(portfolioItem.childNodes[1].classList)
+      portfolioItem.childNodes[1].classList.remove('image-blur');
+    });
+  });
+</script>
+
+</html>
